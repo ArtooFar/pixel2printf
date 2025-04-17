@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Pixel‑Art ➜ printf()</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body {font-family: system-ui, sans-serif; padding: 2rem; background: #f5f5f5; color:#222}
+    h1 {font-size: 1.8rem; margin-bottom:1rem}
+    .card {background:#fff; border-radius:1rem; box-shadow:0 4px 10px rgba(0,0,0,.08); padding:1.5rem; margin-bottom:2rem}
+    label{display:block; margin:.5rem 0;font-weight:600}
+    input[type="file"]{margin-top:.3rem}
+    textarea{width:100%; min-height:300px; font-family:monospace; font-size:.9rem; padding:1rem; border-radius:.5rem; border:1px solid #ccc}
+    .btn{display:inline-block; margin-top:1rem; background:#2563eb; color:#fff; padding:.6rem 1.2rem; border-radius:.75rem; cursor:pointer; border:none; font-size:.9rem; transition:.15s all}
+    .btn:hover{background:#1e4fbb}
+    canvas{display:none}
+  </style>
+</head>
+<body>
+  <h1>Pixel‑Art ➜ <code>printf()</code> Generator</h1>
+
+  <div class="card">
+    <label>Upload a 78 × 44 PNG (with transparency):
+      <input id="imgInput" type="file" accept="image/png" />
+    </label>
+
+    <label>
+      <input type="radio" name="mode" value="fg" checked /> Foreground ( <code>38;2</code> + "██" )
+    </label>
+    <label>
+      <input type="radio" name="mode" value="bg" /> Background ( <code>48;2</code> + spaces )
+    </label>
+
+    <button id="genBtn" class="btn">Generate C Code</button>
+  </div>
+
+  <div class="card">
+    <label>Generated code:</label>
+    <textarea id="codeOut" readonly></textarea>
+  </div>
+
+  <canvas id="cvs" width="78" height="44"></canvas>
+
+<script>
+const ESC = "\\x1b[";
+const imgInput = document.getElementById('imgInput');
+const genBtn   = document.getElementById('genBtn');
+const codeOut  = document.getElementById('codeOut');
+const cvs      = document.getElementById('cvs');
+const ctx      = cvs.getContext('2d');
+
+function rgbTuple(data, idx){
+  return [data[idx], data[idx+1], data[idx+2]]; // r,g,b
+}
+
+function sameColor(a,b){return a&&b&&a[0]===b[0]&&a[1]===b[1]&&a[2]===b[2];}
+
+function generate(useBg){
+  const mode = useBg ? "48" : "38";
+  const pix  = useBg ? "  " : "██"; // two spaces or blocks
+  const imgData = ctx.getImageData(0,0,78,44).data;
+  let curColor=null;
+  let lines = ["#include <stdio.h>","","void draw_image(void) {"]; // header
+  for(let y=0;y<44;y++){
+    let col=0;
+    let buf=['    printf("'];
+    for(let x=0;x<78;x++){
+      const idx=(y*78+x)*4;
+      const alpha=imgData[idx+3];
+      if(alpha===0) continue;
+      const dest=x*2;
+      const move=dest-col;
+      if(move){buf.push(`${ESC}${move}C`); col=dest;}
+      const color=rgbTuple(imgData,idx);
+      if(!sameColor(color,curColor)){
+        buf.push(`${ESC}${mode};2;${color[0]};${color[1]};${color[2]}m`);
+        curColor=color;
+      }
+      buf.push(pix);
+      col+=2;
+    }
+    buf.push(`${ESC}E\");`); // next line
+    lines.push(buf.join(""));
+  }
+  lines.push(`    printf("${ESC}0m");`,`}`);
+  return lines.join("\n");
+}
+
+function handleGenerate(){
+  const file = imgInput.files[0];
+  if(!file){alert('Choose a PNG first');return;}
+  const fr=new FileReader();
+  fr.onload=e=>{
+    const img=new Image();
+    img.onload=()=>{
+      // draw onto canvas (auto scale/crop to 78x44)
+      ctx.clearRect(0,0,78,44);
+      ctx.drawImage(img,0,0,78,44);
+      const mode=document.querySelector('input[name="mode"]:checked').value;
+      codeOut.value=generate(mode==='bg');
+    };
+    img.src=e.target.result;
+  };
+  fr.readAsDataURL(file);
+}
+
+genBtn.addEventListener('click',handleGenerate);
+</script>
+</body>
+</html>
