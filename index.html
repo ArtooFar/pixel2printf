@@ -10,17 +10,19 @@
     .card {background:#fff; border-radius:1rem; box-shadow:0 4px 10px rgba(0,0,0,.08); padding:1.5rem; margin-bottom:2rem}
     label{display:block; margin:.5rem 0;font-weight:600}
     input[type="file"]{margin-top:.3rem}
-    textarea{width:100%; min-height:300px; font-family:monospace; font-size:.9rem; padding:1rem; border-radius:.5rem; border:1px solid #ccc}
+    textarea{width:100%; min-height:280px; font-family:monospace; font-size:.9rem; padding:1rem; border-radius:.5rem; border:1px solid #ccc}
     .btn{display:inline-block; margin-top:1rem; background:#2563eb; color:#fff; padding:.6rem 1.2rem; border-radius:.75rem; cursor:pointer; border:none; font-size:.9rem; transition:.15s all}
     .btn:hover{background:#1e4fbb}
     canvas{display:none}
+    /* preview styling */
+    .preview{font-family:"Cascadia Mono", Consolas, "Courier New", monospace; font-size:12px; line-height:1; background:#000; color:#fff; padding:1rem; border-radius:.5rem; overflow:auto; white-space:pre;}
   </style>
 </head>
 <body>
   <h1>Pixel‑Art ➜ <code>printf()</code> Generator</h1>
 
   <div class="card">
-    <label>Upload a 78 × 44 PNG (with transparency):
+    <label>Upload a 78 × 44 PNG (with transparency):
       <input id="imgInput" type="file" accept="image/png" />
     </label>
 
@@ -35,6 +37,11 @@
   </div>
 
   <div class="card">
+    <label>Preview:</label>
+    <pre id="ansiPreview" class="preview"></pre>
+  </div>
+
+  <div class="card">
     <label>Generated code:</label>
     <textarea id="codeOut" readonly></textarea>
   </div>
@@ -46,16 +53,16 @@ const ESC = "\\x1b[";
 const imgInput = document.getElementById('imgInput');
 const genBtn   = document.getElementById('genBtn');
 const codeOut  = document.getElementById('codeOut');
+const preview  = document.getElementById('ansiPreview');
 const cvs      = document.getElementById('cvs');
 const ctx      = cvs.getContext('2d');
 
 function rgbTuple(data, idx){
   return [data[idx], data[idx+1], data[idx+2]]; // r,g,b
 }
-
 function sameColor(a,b){return a&&b&&a[0]===b[0]&&a[1]===b[1]&&a[2]===b[2];}
 
-function generate(useBg){
+function generateCode(useBg){
   const mode = useBg ? "48" : "38";
   const pix  = useBg ? "  " : "██"; // two spaces or blocks
   const imgData = ctx.getImageData(0,0,78,44).data;
@@ -65,16 +72,16 @@ function generate(useBg){
     let col=0;
     let buf=['    printf("'];
     for(let x=0;x<78;x++){
-      const idx=(y*78+x)*4;
-      const alpha=imgData[idx+3];
+      const i=(y*78+x)*4;
+      const alpha=imgData[i+3];
       if(alpha===0) continue;
       const dest=x*2;
       const move=dest-col;
       if(move){buf.push(`${ESC}${move}C`); col=dest;}
-      const color=rgbTuple(imgData,idx);
-      if(!sameColor(color,curColor)){
-        buf.push(`${ESC}${mode};2;${color[0]};${color[1]};${color[2]}m`);
-        curColor=color;
+      const rgb=rgbTuple(imgData,i);
+      if(!sameColor(rgb,curColor)){
+        buf.push(`${ESC}${mode};2;${rgb[0]};${rgb[1]};${rgb[2]}m`);
+        curColor=rgb;
       }
       buf.push(pix);
       col+=2;
@@ -86,6 +93,29 @@ function generate(useBg){
   return lines.join("\n");
 }
 
+function generatePreview(useBg){
+  const imgData = ctx.getImageData(0,0,78,44).data;
+  let html='';
+  for(let y=0;y<44;y++){
+    for(let x=0;x<78;x++){
+      const i=(y*78+x)*4;
+      const a=imgData[i+3];
+      if(a===0){
+        html+='&nbsp;&nbsp;';
+        continue;
+      }
+      const [r,g,b]=rgbTuple(imgData,i);
+      if(useBg){
+        html+=`<span style="background:rgb(${r},${g},${b});">&nbsp;&nbsp;</span>`;
+      }else{
+        html+=`<span style="color:rgb(${r},${g},${b});">██</span>`;
+      }
+    }
+    html+='<br/>';
+  }
+  return html;
+}
+
 function handleGenerate(){
   const file = imgInput.files[0];
   if(!file){alert('Choose a PNG first');return;}
@@ -93,11 +123,12 @@ function handleGenerate(){
   fr.onload=e=>{
     const img=new Image();
     img.onload=()=>{
-      // draw onto canvas (auto scale/crop to 78x44)
+      // draw to hidden canvas (78x44)
       ctx.clearRect(0,0,78,44);
       ctx.drawImage(img,0,0,78,44);
-      const mode=document.querySelector('input[name="mode"]:checked').value;
-      codeOut.value=generate(mode==='bg');
+      const modeBg = document.querySelector('input[name="mode"]:checked').value==='bg';
+      codeOut.value = generateCode(modeBg);
+      preview.innerHTML = generatePreview(modeBg);
     };
     img.src=e.target.result;
   };
