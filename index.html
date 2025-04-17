@@ -22,27 +22,25 @@
   </style>
 </head>
 <body>
-  <h1>Gerador Pixel‑art ➜ <code>printf()</code> <span id="version" style="font-size:.75rem;opacity:.6;">v0.1.1 – 17 Abr 2025</span></h1>
+  <h1>Gerador Pixel‑art ➜ <code>printf()</code> <span id="version" style="font-size:.75rem;opacity:.6;">v0.1.2 – 17 Abr 2025</span></h1>
 
   <div class="card">
     <label>Envie um PNG 78×44 (com transparência):
       <input id="imgInput" type="file" accept="image/png" />
     </label>
+
     <fieldset>
       <legend>Modo de cor</legend>
       <label><input type="radio" name="colorMode" value="fg" checked> Foreground (<code>38;2</code> + "██")</label>
       <label><input type="radio" name="colorMode" value="bg"> Background (<code>48;2</code> + espaços)</label>
     </fieldset>
+
     <fieldset>
       <legend>Modo de impressão</legend>
       <label><input type="radio" name="place" value="fixa" checked> Âncora fixa</label>
       <label><input type="radio" name="place" value="embutida"> Embutida (relativa)</label>
     </fieldset>
-    <fieldset id="cursorOpt">
-      <legend>Posição do cursor (embutida)</legend>
-      <label><input type="radio" name="cursorPos" value="first"> Fim da <strong>1ª</strong> linha</label>
-      <label><input type="radio" name="cursorPos" value="last" checked> Fim da <strong>última</strong> linha</label>
-    </fieldset>
+
     <button id="genBtn" class="btn">Gerar código C</button>
     <button id="copyBtn" class="btn">Copiar código</button>
   </div>
@@ -72,137 +70,109 @@
     const rgb  = (d,i) => [d[i], d[i+1], d[i+2]];
     const same = (a,b) => a && b && a[0]===b[0] && a[1]===b[1] && a[2]===b[2];
 
-    function handleGenerate(){
-      const file = imgInput.files[0];
-      if(!file){ alert('Selecione uma imagem PNG antes'); return; }
-      const base = file.name.replace(/^(.*[\\/])?/, '').replace(/\.[^.]+$/, '');
-      const func = `desenhar_${base}`.replace(/[^a-zA-Z0-9_]/g, '_');
-      const reader = new FileReader();
-      reader.onload = e => {
-        const img = new Image();
-        img.onload = () => {
-          ctx.clearRect(0,0,78,44);
-          ctx.drawImage(img,0,0,78,44);
-          const bg        = document.querySelector('input[name="colorMode"]:checked').value==='bg';
-          const place     = document.querySelector('input[name="place"]:checked').value;
-          const cursorEnd = document.querySelector('input[name="cursorPos"]:checked').value;
-          let code;
-          if(place==='embutida') code=gerarRelativo(bg,func,cursorEnd);
-          else code=gerarFixo(bg,func);
-          codeOut.value     = code;
-          preview.innerHTML = gerarPreview(bg);
-        };
-        img.src = e.target.result;
-      };
-      reader.readAsDataURL(file);
+    function gerarCodigo(bg, place, func) {
+      return place === 'embutida'
+        ? gerarRelativo(bg, func)
+        : gerarFixo(bg, func);
     }
 
-    genBtn.addEventListener('click', handleGenerate);
-    copyBtn.addEventListener('click', ()=>{
-      if(!codeOut.value){ alert('Nada para copiar ainda!'); return; }
-      navigator.clipboard.writeText(codeOut.value).then(()=>{
-        copyBtn.textContent='Copiado ✔';
-        setTimeout(()=>copyBtn.textContent='Copiar código',1500);
-      });
-    });
-
-    function gerarFixo(bg,func){
-      const mode=bg?"48":"38";
-      const pix =bg?"  ":"██";
-      const data=ctx.getImageData(0,0,78,44).data;
-      let last=-1;
-      outer:for(let y=43;y>=0;y--){
-        for(let x=0;x<78;x++) if(data[(y*78+x)*4+3]){ last=y; break outer; }
-      }
-      if(last===-1) return `void ${func}() {\n}`;
-      const out=[`void ${func}() {`,`    printf("${ESC}s");`];
-      let cur=null, blanks=0;
-      const flush=n=>{
-        if(n===0) return;
-        if(n===1) out.push(`    printf("${ESC}E");`);
-        else      out.push(`    printf("${ESC}${n}E");`);
-      };
-      for(let y=0;y<=last;y++){
-        let col=0, drew=false;
-        const buf=[`    printf("`];
-        for(let x=0;x<78;x++){
-          const idx=(y*78+x)*4;
-          if(!data[idx+3]) continue;
-          const dest=x*2, mv=dest-col;
-          if(mv){ buf.push(`${ESC}${mv}C`); col=dest; }
-          const c=rgb(data,idx);
-          if(!same(c,cur)){
-            buf.push(`${ESC}${mode};2;${c[0]};${c[1]};${c[2]}m`);
-            cur=c;
-          }
-          buf.push(pix);
-          col+=2;
-          drew=true;
+    function gerarFixo(bg, func) {
+      const mode = bg ? "48" : "38";
+      const pix  = bg ? "  " : "██";
+      const data = ctx.getImageData(0,0,78,44).data;
+      let last = -1;
+      outer: for(let y = 43; y >= 0; y--) {
+        for(let x = 0; x < 78; x++) {
+          if(data[(y*78+x)*4+3]) { last = y; break outer; }
         }
-        if(drew){ flush(blanks); blanks=0; buf.push(`${ESC}E");`); out.push(buf.join("")); }
-        else blanks++;
+      }
+      if(last === -1) return `void ${func}() {\n}`;
+      const out = [`void ${func}() {`, `    printf("${ESC}s");`];
+      let cur = null, blanks = 0;
+      const flush = n => { if(n===0) return; out.push(`    printf("${ESC}${n>1?n:''}E");`); };
+      for(let y=0;y<=last;y++){
+        let col=0,drew=false, buf=["    printf(\""];
+        for(let x=0;x<78;x++){
+          const idx=(y*78+x)*4; if(!data[idx+3]) continue;
+          const dest=x*2, mv=dest-col; if(mv){buf.push(`${ESC}${mv}C`);col=dest;}
+          const c=rgb(data,idx); if(!same(c,cur)){buf.push(`${ESC}${mode};2;${c[0]};${c[1]};${c[2]}m`);cur=c;}
+          buf.push(pix); col+=2; drew=true;
+        }
+        if(drew){flush(blanks);blanks=0;buf.push(`${ESC}E\");`);out.push(buf.join(''));}else blanks++;
       }
       flush(blanks);
-      out.push(`    printf("${ESC}0m");`,`    printf("${ESC}u");`,`}`);
+      out.push(`    printf("${ESC}0m");`, `}`);
       return out.join("\n");
     }
 
-    function gerarRelativo(bg,func,cursorEnd){
-      const mode=bg?"48":"38";
-      const pix =bg?"  ":"██";
-      const data=ctx.getImageData(0,0,78,44).data;
-      let minY=44,maxY=-1,minX=78,maxX=-1;
-      for(let y=0;y<44;y++){
-        for(let x=0;x<78;x++){
-          if(data[(y*78+x)*4+3]){
-            minY=Math.min(minY,y); maxY=Math.max(maxY,y);
-            minX=Math.min(minX,x); maxX=Math.max(maxX,x);
-          }
-        }
-      }
+    function gerarRelativo(bg, func) {
+      const mode = bg ? "48" : "38";
+      const pix  = bg ? "  " : "██";
+      const data = ctx.getImageData(0,0,78,44).data;
+      let minY=44, maxY=-1, minX=78, maxX=-1;
+      for(let y=0;y<44;y++)for(let x=0;x<78;x++)if(data[(y*78+x)*4+3]){minY=Math.min(minY,y);maxY=Math.max(maxY,y);minX=Math.min(minX,x);maxX=Math.max(maxX,x);}
       if(maxY===-1) return `void ${func}() {\n}`;
-      const widthChars=(maxX-minX+1)*2;
+      const widthChars = (maxX-minX+1)*2;
       const out=[`void ${func}() {`];
       let cur=null;
       for(let y=minY;y<=maxY;y++){
-        let col=0;
-        const buf=[`    printf("`];
+        let col=0, buf=["    printf(\""];
         for(let x=minX;x<=maxX;x++){
           const idx=(y*78+x)*4; if(!data[idx+3]) continue;
-          const dest=(x-minX)*2, mv=dest-col;
-          if(mv){ buf.push(`${ESC}${mv>0?mv+'C':-mv+'D'}`); col=dest; }
-          const c=rgb(data,idx);
-          if(!same(c,cur)){
-            buf.push(`${ESC}${mode};2;${c[0]};${c[1]};${c[2]}m`);
-            cur=c;
-          }
-          buf.push(pix);
-          col+=2;
+          const dest=(x-minX)*2, mv=dest-col; if(mv){buf.push(`${ESC}${mv>0?mv+'C':-mv+'D'}`);col=dest;}
+          const c=rgb(data,idx); if(!same(c,cur)){buf.push(`${ESC}${mode};2;${c[0]};${c[1]};${c[2]}m`);cur=c;}
+          buf.push(pix);col+=2;
         }
         if(y!==maxY) buf.push(`${ESC}1B${ESC}${widthChars}D`);
-        buf.push(`");`);
-        out.push(buf.join(""));
-        if(y===minY && cursorEnd==='first') out.push(`    printf("${ESC}s");`);
+        buf.push(`\");`);
+        out.push(buf.join(''));
       }
-      if(cursorEnd==='first') out.push(`    printf("${ESC}u");`);
-      out.push(`    printf("${ESC}0m");`,`}`);
+      out.push(`    printf("${ESC}0m");`, `}`);
       return out.join("\n");
     }
 
-    function gerarPreview(bg){
+    function gerarPreview(bg) {
       const d=ctx.getImageData(0,0,78,44).data;
       let html="";
       for(let y=0;y<44;y++){
         for(let x=0;x<78;x++){
           const i=(y*78+x)*4;
-          if(!d[i+3]){ html+="&nbsp;&nbsp;"; continue; }
+          if(!d[i+3]){html+="&nbsp;&nbsp;";continue;}
           const [r,g,b]=rgb(d,i);
-          html+=bg?`<span style="background:rgb(${r},${g},${b});">&nbsp;&nbsp;</span>`:`<span style="color:rgb(${r},${g},${b});">██</span>`;
+          html+=bg?
+            `<span style="background:rgb(${r},${g},${b});">&nbsp;&nbsp;</span>`:
+            `<span style="color:rgb(${r},${g},${b});">██</span>`;
         }
         html+="<br/>";
       }
       return html;
     }
+
+    function handleGenerate(){
+      const file=imgInput.files[0]; if(!file){alert('Selecione uma imagem PNG antes');return;}
+      const base=file.name.replace(/^(.*[\\/])?/, '').replace(/\.[^.]+$/,'');
+      const func=`desenhar_${base}`.replace(/[^a-zA-Z0-9_]/g,'_');
+      const reader=new FileReader();
+      reader.onload=e=>{
+        const img=new Image();
+        img.onload=()=>{
+          ctx.clearRect(0,0,78,44);
+          ctx.drawImage(img,0,0,78,44);
+          const bg=document.querySelector('input[name="colorMode"]:checked').value==='bg';
+          const place=document.querySelector('input[name="place"]:checked').value;
+          codeOut.value=gerarCodigo(bg,place,func);
+          preview.innerHTML=gerarPreview(bg);
+        };
+        img.src=e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    genBtn.addEventListener('click',handleGenerate);
+    copyBtn.addEventListener('click',()=>{
+      if(!codeOut.value){alert('Nada para copiar ainda!');return;}
+      navigator.clipboard.writeText(codeOut.value).then(()=>{copyBtn.textContent='Copiado ✔';setTimeout(()=>copyBtn.textContent='Copiar código',1500);});
+    });
   </script>
 </body>
 </html>
