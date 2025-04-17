@@ -62,12 +62,12 @@ function rgbTuple(data, idx){
 }
 function sameColor(a,b){return a&&b&&a[0]===b[0]&&a[1]===b[1]&&a[2]===b[2];}
 
-function generateCode(useBg){
+function generateCode(useBg, funcName){
   const mode = useBg ? "48" : "38";
   const pix  = useBg ? "  " : "██"; // two spaces or blocks
   const imgData = ctx.getImageData(0,0,78,44).data;
   let curColor=null;
-  let lines = ["#include <stdio.h>","","void draw_image(void) {"]; // header
+  let lines = ["#include <stdio.h>","",`void ${funcName}() {`]; // header with dynamic name
   for(let y=0;y<44;y++){
     let col=0;
     let buf=['    printf("'];
@@ -78,7 +78,7 @@ function generateCode(useBg){
       const dest=x*2;
       const move=dest-col;
       if(move){buf.push(`${ESC}${move}C`); col=dest;}
-      const rgb=rgbTuple(imgData,i);
+      const rgb=[imgData[i],imgData[i+1],imgData[i+2]];
       if(!sameColor(rgb,curColor)){
         buf.push(`${ESC}${mode};2;${rgb[0]};${rgb[1]};${rgb[2]}m`);
         curColor=rgb;
@@ -90,7 +90,9 @@ function generateCode(useBg){
     lines.push(buf.join(""));
   }
   lines.push(`    printf("${ESC}0m");`,`}`);
-  return lines.join("\n");
+  return lines.join("
+");
+}("\n");
 }
 
 function generatePreview(useBg){
@@ -119,15 +121,16 @@ function generatePreview(useBg){
 function handleGenerate(){
   const file = imgInput.files[0];
   if(!file){alert('Choose a PNG first');return;}
+  const baseName = file.name.replace(/^(.*[\/])?/, '').replace(/\.[^.]+$/, '');
+  const funcName = `desenhar_${baseName}`.replace(/[^a-zA-Z0-9_]/g, '_');
   const fr=new FileReader();
   fr.onload=e=>{
     const img=new Image();
     img.onload=()=>{
-      // draw to hidden canvas (78x44)
       ctx.clearRect(0,0,78,44);
       ctx.drawImage(img,0,0,78,44);
       const modeBg = document.querySelector('input[name="mode"]:checked').value==='bg';
-      codeOut.value = generateCode(modeBg);
+      codeOut.value = generateCode(modeBg, funcName);
       preview.innerHTML = generatePreview(modeBg);
     };
     img.src=e.target.result;
@@ -135,7 +138,7 @@ function handleGenerate(){
   fr.readAsDataURL(file);
 }
 
-genBtn.addEventListener('click',handleGenerate);
+genBtn.addEventListener('click',handleGenerate);('click',handleGenerate);
 </script>
 </body>
 </html>
