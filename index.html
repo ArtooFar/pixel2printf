@@ -24,7 +24,6 @@
     .btn:hover{background:var(--accent-hover)}
     canvas{display:none}
     .preview{font-family:"Cascadia Mono",Consolas,"Courier New",monospace;font-size:12px;line-height:1;display:inline-block;background:#000;color:#fff;border-radius:.5rem;white-space:pre;overflow:hidden;padding:0;}
-    a{color:var(--accent)}
   </style>
 </head>
 <body>
@@ -35,12 +34,8 @@
       <input id="imgInput" type="file" accept="image/png" />
     </label>
 
-    <label>
-      <input type="radio" name="mode" value="fg" checked /> Foreground (<code>38;2</code> + "██")
-    </label>
-    <label>
-      <input type="radio" name="mode" value="bg" /> Background (<code>48;2</code> + espaços)
-    </label>
+    <label><input type="radio" name="mode" value="fg" checked /> Foreground (<code>38;2</code> + "██")</label>
+    <label><input type="radio" name="mode" value="bg" /> Background (<code>48;2</code> + espaços)</label>
 
     <button id="genBtn" class="btn">Gerar código C</button>
     <button id="copyBtn" class="btn">Copiar código</button>
@@ -59,7 +54,7 @@
   <canvas id="cvs" width="78" height="44"></canvas>
 
 <script>
-const ESC="\\e["; // usa \e[ em vez de \x1b[
+const ESC="\\e["; // usa \e[
 const imgInput=document.getElementById('imgInput');
 const genBtn=document.getElementById('genBtn');
 const copyBtn=document.getElementById('copyBtn');
@@ -68,48 +63,74 @@ const preview=document.getElementById('ansiPreview');
 const cvs=document.getElementById('cvs');
 const ctx=cvs.getContext('2d');
 
-const rgbTuple=(d,i)=>[d[i],d[i+1],d[i+2]];
-const sameColor=(a,b)=>a&&b&&a[0]===b[0]&&a[1]===b[1]&&a[2]===b[2];
+const rgb=(d,i)=>[d[i],d[i+1],d[i+2]];
+const same=(a,b)=>a&&b&&a[0]===b[0]&&a[1]===b[1]&&a[2]===b[2];
 
-function gerarCodigo(usaBg,nomeFunc){
-  const modo=usaBg?"48":"38";
-  const pixel=usaBg?"  ":"██";
-  const img=ctx.getImageData(0,0,78,44).data;
-  let corAtual=null;
-  const linhas=[`void ${nomeFunc}() {`]; // sem #include
-  for(let y=0;y<44;y++){
+function gerarCodigo(bg,func){
+  const modo = bg ? "48" : "38";
+  const px   = bg ? "  " : "██";
+  const data = ctx.getImageData(0,0,78,44).data;
+
+  // Descobrir a última linha que contém algum pixel opaco
+  let ultima=-1;
+  outer: for(let y=43;y>=0;y--){
+    for(let x=0;x<78;x++) if(data[(y*78+x)*4+3]!==0){ ultima=y; break outer; }
+  }
+  if(ultima===-1) return `void ${func}() {\n}`; // imagem vazia
+
+  const out = [`void ${func}() {`];
+  let curColor=null;
+  let blankRun=0;
+
+  const flushBlanks=count=>{
+    if(count===0) return;
+    if(count===1) out.push(`    printf("${ESC}E");`);
+    else          out.push(`    printf("${ESC}${count}E");`);
+  };
+
+  for(let y=0;y<=ultima;y++){
     let col=0;
+    let drew=false;
     let buf=['    printf("'];
+
     for(let x=0;x<78;x++){
       const idx=(y*78+x)*4;
-      if(img[idx+3]===0) continue;
+      if(data[idx+3]===0) continue;
       const dest=x*2;
-      const mov=dest-col;
-      if(mov){buf.push(`${ESC}${mov}C`); col=dest;}
-      const rgb=rgbTuple(img,idx);
-      if(!sameColor(rgb,corAtual)){
-        buf.push(`${ESC}${modo};2;${rgb[0]};${rgb[1]};${rgb[2]}m`);
-        corAtual=rgb;
-      }
-      buf.push(pixel);
-      col+=2;
+      const move=dest-col;
+      if(move){buf.push(`${ESC}${move}C`); col=dest;}
+      const c=[data[idx],data[idx+1],data[idx+2]];
+      if(!same(c,curColor)){buf.push(`${ESC}${modo};2;${c[0]};${c[1]};${c[2]}m`); curColor=c;}
+      buf.push(px); col+=2; drew=true;
     }
-    buf.push(`${ESC}E");`);
-    linhas.push(buf.join(""));
+
+    if(drew){
+      // Antes de imprimir a linha útil, descarrega eventual sequência de vazias
+      flushBlanks(blankRun); blankRun=0;
+      buf.push(`${ESC}E");`);
+      out.push(buf.join(""));
+    }else{
+      blankRun++;
+    }
   }
-  linhas.push(`    printf("${ESC}0m");`,`}`);
-  return linhas.join("\n");
+
+  // Descarrega blanks finais dentro da área útil
+  flushBlanks(blankRun);
+
+  // Reset + cursor home
+  out.push(`    printf("${ESC}0m");`,`    printf("${ESC}H");`,`}`);
+  return out.join("\n");
 }
 
-function gerarPreview(usaBg){
-  const img=ctx.getImageData(0,0,78,44).data;
+function gerarPreview(bg){
+  const d=ctx.getImageData(0,0,78,44).data;
   let html='';
   for(let y=0;y<44;y++){
     for(let x=0;x<78;x++){
-      const idx=(y*78+x)*4;
-      if(img[idx+3]===0){html+='&nbsp;&nbsp;';continue;}
-      const [r,g,b]=rgbTuple(img,idx);
-      html+=usaBg?`<span style=\"background:rgb(${r},${g},${b});\">&nbsp;&nbsp;</span>`:`<span style=\"color:rgb(${r},${g},${b});\">██</span>`;
+      const i=(y*78+x)*4;
+      if(d[i+3]===0){html+='&nbsp;&nbsp;';continue;}
+      const [r,g,b]=rgb(d,i);
+      html+=bg?`<span style=\"background:rgb(${r},${g},${b});\">&nbsp;&nbsp;</span>`:`<span style=\"color:rgb(${r},${g},${b});\">██</span>`;
     }
     html+='<br/>';
   }
@@ -117,23 +138,23 @@ function gerarPreview(usaBg){
 }
 
 function handleGenerate(){
-  const arquivo=imgInput.files[0];
-  if(!arquivo){alert('Selecione uma imagem PNG antes');return;}
-  const base=arquivo.name.replace(/^(.*[\\/])?/,'').replace(/\.[^.]+$/,'');
-  const nomeFunc=`desenhar_${base}`.replace(/[^a-zA-Z0-9_]/g,'_');
+  const file=imgInput.files[0];
+  if(!file){alert('Selecione uma imagem PNG antes');return;}
+  const base=file.name.replace(/^(.*[\\/])?/,'').replace(/\.[^.]+$/,'');
+  const func=`desenhar_${base}`.replace(/[^a-zA-Z0-9_]/g,'_');
   const reader=new FileReader();
   reader.onload=e=>{
     const img=new Image();
     img.onload=()=>{
       ctx.clearRect(0,0,78,44);
       ctx.drawImage(img,0,0,78,44);
-      const usaBg=document.querySelector('input[name="mode"]:checked').value==='bg';
-      codeOut.value=gerarCodigo(usaBg,nomeFunc);
-      preview.innerHTML=gerarPreview(usaBg);
+      const bg=document.querySelector('input[name="mode"]:checked').value==='bg';
+      codeOut.value=gerarCodigo(bg,func);
+      preview.innerHTML=gerarPreview(bg);
     };
     img.src=e.target.result;
   };
-  reader.readAsDataURL(arquivo);
+  reader.readAsDataURL(file);
 }
 
 function handleCopy(){
