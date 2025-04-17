@@ -43,6 +43,7 @@
     </label>
 
     <button id="genBtn" class="btn">Gerar código C</button>
+    <button id="copyBtn" class="btn">Copiar código</button>
   </div>
 
   <div class="card">
@@ -58,9 +59,10 @@
   <canvas id="cvs" width="78" height="44"></canvas>
 
 <script>
-const ESC="\\e[";
+const ESC="\\e["; // usa \e[ em vez de \x1b[
 const imgInput=document.getElementById('imgInput');
 const genBtn=document.getElementById('genBtn');
+const copyBtn=document.getElementById('copyBtn');
 const codeOut=document.getElementById('codeOut');
 const preview=document.getElementById('ansiPreview');
 const cvs=document.getElementById('cvs');
@@ -69,12 +71,12 @@ const ctx=cvs.getContext('2d');
 const rgbTuple=(d,i)=>[d[i],d[i+1],d[i+2]];
 const sameColor=(a,b)=>a&&b&&a[0]===b[0]&&a[1]===b[1]&&a[2]===b[2];
 
-function gerarCodigo(usaBg, nomeFunc){
+function gerarCodigo(usaBg,nomeFunc){
   const modo=usaBg?"48":"38";
   const pixel=usaBg?"  ":"██";
   const img=ctx.getImageData(0,0,78,44).data;
   let corAtual=null;
-  const linhas=["#include <stdio.h>","",`void ${nomeFunc}() {`];
+  const linhas=[`void ${nomeFunc}() {`]; // sem #include
   for(let y=0;y<44;y++){
     let col=0;
     let buf=['    printf("'];
@@ -134,7 +136,16 @@ function handleGenerate(){
   reader.readAsDataURL(arquivo);
 }
 
+function handleCopy(){
+  if(!codeOut.value){alert('Nada para copiar ainda!');return;}
+  navigator.clipboard.writeText(codeOut.value).then(()=>{
+    copyBtn.textContent='Copiado ✔';
+    setTimeout(()=>copyBtn.textContent='Copiar código',1500);
+  });
+}
+
 genBtn.addEventListener('click',handleGenerate);
+copyBtn.addEventListener('click',handleCopy);
 </script>
 </body>
 </html>
