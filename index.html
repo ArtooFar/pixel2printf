@@ -5,9 +5,7 @@
   <title>Gerador Pixel‑art ➜ printf()</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root {
-      --bg: #121212; --card:#1e1e1e; --accent:#2563eb; --accent-hover:#1e4fbb; --text:#e5e5e5; --border:#333;
-    }
+    :root { --bg:#121212; --card:#1e1e1e; --accent:#2563eb; --accent-hover:#1e4fbb; --text:#e5e5e5; --border:#333; }
     * { box-sizing:border-box; margin:0; padding:0 }
     body { font-family:System-ui,sans-serif; background:var(--bg); color:var(--text); padding:2rem }
     h1 { font-size:1.8rem; margin-bottom:1rem }
@@ -24,7 +22,7 @@
   </style>
 </head>
 <body>
-  <h1>Gerador Pixel‑art ➜ <code>printf()</code> <span style="font-size:.75rem;opacity:.6;">v0.1.5 – 17 Abr 2025</span></h1>
+  <h1>Gerador Pixel‑art ➜ <code>printf()</code> <span id="version" style="font-size:.75rem;opacity:.6;">v0.1.2 – 17 Abr 2025</span></h1>
 
   <div class="card">
     <label>Envie um PNG 78×44 (com transparência):
@@ -43,13 +41,6 @@
       <label><input type="radio" name="place" value="embutida"> Embutida (relativa)</label>
     </fieldset>
 
-    <fieldset>
-      <legend>Fundo do preview</legend>
-      <label><input type="radio" name="previewBg" value="#000" checked> Preto</label>
-      <label><input type="radio" name="previewBg" value="#fff"> Branco</label>
-      <label><input type="radio" name="previewBg" value="#888"> Cinza</label>
-    </fieldset>
-
     <button id="genBtn" class="btn">Gerar código C</button>
     <button id="copyBtn" class="btn">Copiar código</button>
   </div>
@@ -66,90 +57,122 @@
 
   <canvas id="cvs" width="78" height="44"></canvas>
 
-<script>
-const ESC = "\\e[";
-const imgInput = document.getElementById('imgInput');
-const genBtn   = document.getElementById('genBtn');
-const copyBtn  = document.getElementById('copyBtn');
-const codeOut  = document.getElementById('codeOut');
-const preview  = document.getElementById('ansiPreview');
-const cvs      = document.getElementById('cvs');
-const ctx      = cvs.getContext('2d');
+  <script>
+    const ESC = "\\e[";
+    const imgInput = document.getElementById('imgInput');
+    const genBtn   = document.getElementById('genBtn');
+    const copyBtn  = document.getElementById('copyBtn');
+    const codeOut  = document.getElementById('codeOut');
+    const preview  = document.getElementById('ansiPreview');
+    const cvs      = document.getElementById('cvs');
+    const ctx      = cvs.getContext('2d');
 
-const rgb  = (d,i)=>[d[i],d[i+1],d[i+2]];
-const same = (a,b)=>a&&b&&(a[0]===b[0]&&a[1]===b[1]&&a[2]===b[2]);
+    const rgb  = (d,i) => [d[i], d[i+1], d[i+2]];
+    const same = (a,b) => a && b && a[0]===b[0] && a[1]===b[1] && a[2]===b[2];
 
-function gerarCodigo(bg,place,func){
-  return place==='embutida'?gerarRelativo(bg,func):gerarFixo(bg,func);
-}
-
-// ---------- ÂNCORA FIXA ----------
-function gerarFixo(bg,func){
-  const mode=bg?"48":"38";
-  const pix =bg?"  ":"██";
-  const data=ctx.getImageData(0,0,78,44).data;
-  let last=-1;
-  outer:for(let y=43;y>=0;--y){
-    for(let x=0;x<78;++x){ if(data[(y*78+x)*4+3]){ last=y; break outer; } }
-  }
-  if(last===-1) return `void ${func}() {\n}`;
-  const out=[`void ${func}() {`];
-  let cur=null, blanks=0;
-  const flush=n=>{ if(n===0) return; out.push(`    printf(\"${ESC}${n>1?n:''}E\");`); };
-
-  for(let y=0;y<=last;y++){
-    let col=0,drew=false;
-    const buf=[`    printf(\"`];
-    for(let x=0;x<78;x++){
-      const a=(y*78+x)*4; if(!data[a+3]) continue;
-      const dest=x*2, mv=dest-col;
-      if(mv){ buf.push(`${ESC}${mv}C`); col=dest; }
-      const c=rgb(data,a);
-      if(!same(c,cur)){ buf.push(`${ESC}${mode};2;${c[0]};${c[1]};${c[2]}m`); cur=c; }
-      buf.push(pix); col+=2; drew=true;
+    function gerarCodigo(bg, place, func) {
+      return place === 'embutida'
+        ? gerarRelativo(bg, func)
+        : gerarFixo(bg, func);
     }
-    if(drew){ flush(blanks); blanks=0; buf.push(`${ESC}E\\");`); out.push(buf.join("")); }
-    else blanks++;
-  }
-  flush(blanks);
-  out.push(`    printf(\"${ESC}0m\");`,`    printf(\"${ESC}H\");`,`}`);
-  return out.join("\n");
-}
 
-// ---------- EMBUTIDA ----------
-function gerarRelativo(bg,func){
-  const mode=bg?"48":"38";
-  const pix =bg?"  ":"██";
-  const data=ctx.getImageData(0,0,78,44).data;
-  let minY=44,maxY=-1,minX=78,maxX=-1;
-  for(let y=0;y<44;y++) for(let x=0;x<78;x++) if(data[(y*78+x)*4+3]){ minY=Math.min(minY,y); maxY=Math.max(maxY,y); minX=Math.min(minX,x); maxX=Math.max(maxX,x); }
-  if(maxY===-1) return `void ${func}() {\n}`;
-  const widthChars=(maxX-minX+1)*2;
-  const out=[`void ${func}() {`];
-  let cur=null;
-  for(let y=minY;y<=maxY;y++){
-    let col=0; const buf=[`    printf(\"`];
-    for(let x=minX;x<=maxX;x++){
-      const a=(y*78+x)*4; if(!data[a+3]) continue;
-      const dest=(x-minX)*2, mv=dest-col; if(mv){ buf.push(`${ESC}${mv>0?mv+'C':-mv+'D'}`); col=dest; }
-      const c=rgb(data,a); if(!same(c,cur)){ buf.push(`${ESC}${mode};2;${c[0]};${c[1]};${c[2]}m`); cur=c; }
-      buf.push(pix); col+=2;
+    function gerarFixo(bg, func) {
+      const mode = bg ? "48" : "38";
+      const pix  = bg ? "  " : "██";
+      const data = ctx.getImageData(0,0,78,44).data;
+      let last = -1;
+      outer: for(let y = 43; y >= 0; y--) {
+        for(let x = 0; x < 78; x++) {
+          if(data[(y*78+x)*4+3]) { last = y; break outer; }
+        }
+      }
+      if(last === -1) return `void ${func}() {\n}`;
+      const out = [`void ${func}() {`, `    printf("${ESC}s");`];
+      let cur = null, blanks = 0;
+      const flush = n => { if(n===0) return; out.push(`    printf("${ESC}${n>1?n:''}E");`); };
+      for(let y=0;y<=last;y++){
+        let col=0,drew=false, buf=["    printf(\""];
+        for(let x=0;x<78;x++){
+          const idx=(y*78+x)*4; if(!data[idx+3]) continue;
+          const dest=x*2, mv=dest-col; if(mv){buf.push(`${ESC}${mv}C`);col=dest;}
+          const c=rgb(data,idx); if(!same(c,cur)){buf.push(`${ESC}${mode};2;${c[0]};${c[1]};${c[2]}m`);cur=c;}
+          buf.push(pix); col+=2; drew=true;
+        }
+        if(drew){flush(blanks);blanks=0;buf.push(`${ESC}E\");`);out.push(buf.join(''));}else blanks++;
+      }
+      flush(blanks);
+      out.push(`    printf("${ESC}0m");`, `}`);
+      return out.join("\n");
     }
-    if(y!==maxY) buf.push(`${ESC}1B${ESC}${widthChars}D`);
-    buf.push(`\\");`);
-    out.push(buf.join(""));
-  }
-  out.push(`    printf(\"${ESC}0m\");`,`}`);
-  return out.join("\n");
-}
 
-// ---------- PREVIEW ----------
-function gerarPreview(bg,bgColor){
-  const d=ctx.getImageData(0,0,78,44).data;
-  let html="";
-  for(let y=0;y<44;y++){
-    for(let x=0;x<78;x++){
-      const i=(y*78+x)*4;
-      if(!d[i+3]){ html+="&nbsp;&nbsp;"; continue; }
-      const [r,g,b]=rgb(d,i);
-      html+=bg?`<span style=\"background:rgb(${r},${g},
+    function gerarRelativo(bg, func) {
+      const mode = bg ? "48" : "38";
+      const pix  = bg ? "  " : "██";
+      const data = ctx.getImageData(0,0,78,44).data;
+      let minY=44, maxY=-1, minX=78, maxX=-1;
+      for(let y=0;y<44;y++)for(let x=0;x<78;x++)if(data[(y*78+x)*4+3]){minY=Math.min(minY,y);maxY=Math.max(maxY,y);minX=Math.min(minX,x);maxX=Math.max(maxX,x);}
+      if(maxY===-1) return `void ${func}() {\n}`;
+      const widthChars = (maxX-minX+1)*2;
+      const out=[`void ${func}() {`];
+      let cur=null;
+      for(let y=minY;y<=maxY;y++){
+        let col=0, buf=["    printf(\""];
+        for(let x=minX;x<=maxX;x++){
+          const idx=(y*78+x)*4; if(!data[idx+3]) continue;
+          const dest=(x-minX)*2, mv=dest-col; if(mv){buf.push(`${ESC}${mv>0?mv+'C':-mv+'D'}`);col=dest;}
+          const c=rgb(data,idx); if(!same(c,cur)){buf.push(`${ESC}${mode};2;${c[0]};${c[1]};${c[2]}m`);cur=c;}
+          buf.push(pix);col+=2;
+        }
+        if(y!==maxY) buf.push(`${ESC}1B${ESC}${widthChars}D`);
+        buf.push(`\");`);
+        out.push(buf.join(''));
+      }
+      out.push(`    printf("${ESC}0m");`, `}`);
+      return out.join("\n");
+    }
+
+    function gerarPreview(bg) {
+      const d=ctx.getImageData(0,0,78,44).data;
+      let html="";
+      for(let y=0;y<44;y++){
+        for(let x=0;x<78;x++){
+          const i=(y*78+x)*4;
+          if(!d[i+3]){html+="&nbsp;&nbsp;";continue;}
+          const [r,g,b]=rgb(d,i);
+          html+=bg?
+            `<span style="background:rgb(${r},${g},${b});">&nbsp;&nbsp;</span>`:
+            `<span style="color:rgb(${r},${g},${b});">██</span>`;
+        }
+        html+="<br/>";
+      }
+      return html;
+    }
+
+    function handleGenerate(){
+      const file=imgInput.files[0]; if(!file){alert('Selecione uma imagem PNG antes');return;}
+      const base=file.name.replace(/^(.*[\\/])?/, '').replace(/\.[^.]+$/,'');
+      const func=`desenhar_${base}`.replace(/[^a-zA-Z0-9_]/g,'_');
+      const reader=new FileReader();
+      reader.onload=e=>{
+        const img=new Image();
+        img.onload=()=>{
+          ctx.clearRect(0,0,78,44);
+          ctx.drawImage(img,0,0,78,44);
+          const bg=document.querySelector('input[name="colorMode"]:checked').value==='bg';
+          const place=document.querySelector('input[name="place"]:checked').value;
+          codeOut.value=gerarCodigo(bg,place,func);
+          preview.innerHTML=gerarPreview(bg);
+        };
+        img.src=e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    genBtn.addEventListener('click',handleGenerate);
+    copyBtn.addEventListener('click',()=>{
+      if(!codeOut.value){alert('Nada para copiar ainda!');return;}
+      navigator.clipboard.writeText(codeOut.value).then(()=>{copyBtn.textContent='Copiado ✔';setTimeout(()=>copyBtn.textContent='Copiar código',1500);});
+    });
+  </script>
+</body>
+</html>
