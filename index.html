@@ -7,13 +7,16 @@
   <style>
     :root { --bg:#121212; --card:#1e1e1e; --accent:#2563eb; --accent-hover:#1e4fbb; --text:#e5e5e5; --border:#333; }
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:System-ui,sans-serif;background:var(--bg);color:var(--text);padding:2rem}
-    h1{font-size:1.8rem;margin-bottom:1rem}
+    body{font-family:System-ui,sans-serif;background:var(--bg);color:var(--text);padding:1rem; md:padding:2rem;}
+    h1{font-size:1.8rem;margin-bottom:1rem;text-align:center;}
     .card{background:var(--card);border:1px solid var(--border);border-radius:1rem;box-shadow:0 4px 10px rgba(0,0,0,.4);padding:1.5rem;margin-bottom:2rem}
     label{display:block;margin:.5rem 0;font-weight:600}
-    input[type="file"],input[type="number"]{margin-top:.3rem}
-    input[type="number"]{width:70px;padding:.2rem;border-radius:.4rem;border:1px solid var(--border);background:#000;color:var(--text)}
-    textarea{width:100%;min-height:280px;font-family:monospace;font-size:.9rem;padding:1rem;border-radius:.5rem;border:1px solid var(--border);background:#000;color:var(--text)}
+    input[type="file"],input[type="number"],input[type="color"]{margin-top:.3rem}
+    input[type="number"]{width:70px;padding:.2rem;border-radius:.4rem;border:1px solid var(--border);background:#111;color:var(--text)}
+    input[type="color"]{min-width:50px;height:30px;padding:0.1rem;border-radius:.4rem;border:1px solid var(--border);background:transparent;cursor:pointer;}
+    .preview{cursor: crosshair;} /* Indica que o preview é clicável */
+    .quick-tools-p {font-size: 0.8rem; opacity: 0.7; margin-top: 0.5rem;}
+    textarea{width:100%;min-height:280px;font-family:monospace;font-size:.9rem;padding:1rem;border-radius:.5rem;border:1px solid var(--border);background:#111;color:var(--text)}
     .btn{display:inline-block;margin-top:1rem;background:var(--accent);color:#fff;padding:.6rem 1.2rem;border-radius:.75rem;border:none;cursor:pointer;font-size:.9rem;transition:.15s}
     .btn:hover{background:var(--accent-hover)}
     .preview{font-family:"Cascadia Mono",Consolas,"Courier New",monospace;font-size:12px;line-height:1;background:#000;color:#fff;border-radius:.5rem;white-space:pre;display:inline-block;overflow:hidden;padding:0}
@@ -23,7 +26,7 @@
   </style>
 </head>
 <body>
-  <h1>Gerador Pixel-art ➜ <code>printf()</code> <span style="font-size:.75rem;opacity:.6;">v0.2.1 – 24 Jun 2025</span></h1>
+  <h1>Gerador Pixel-art ➜ <code>printf()</code> <span style="font-size:.75rem;opacity:.6;">v0.3.0</span></h1>
 
   <div class="card">
     <label>Envie um PNG (com transparência):
@@ -62,6 +65,29 @@
     <pre id="ansiPreview" class="preview"></pre>
   </div>
 
+  <!-- BLOCO DE FERRAMENTAS RÁPIDAS -->
+  <div class="card">
+    <label>Ferramentas Rápidas (Posição e Cor)</label>
+    <p class="quick-tools-p">Clique no preview acima para pegar o código de posicionamento.<br>Use o seletor para gerar códigos de cor ANSI.</p>
+    
+    <div style="display:flex; flex-wrap: wrap; align-items: center; gap: 1rem; margin-top: 1rem;">
+      <fieldset>
+        <legend>Seletor de Cor</legend>
+        <input type="color" id="colorPicker" value="#2563eb">
+      </fieldset>
+      <fieldset>
+        <legend>Tipo de Cor</legend>
+        <label><input type="radio" name="colorType" value="fg" checked> Foreground (texto)</label>
+        <label><input type="radio" name="colorType" value="bg"> Background (fundo)</label>
+      </fieldset>
+    </div>
+
+    <label for="quickCodeOut" style="margin-top: 1.5rem;">Snippet de Código Rápido:</label>
+    <textarea id="quickCodeOut" readonly style="min-height: 110px;"></textarea>
+    <button id="copyQuickBtn" class="btn" type="button">Copiar Snippet</button>
+  </div>
+  <!-- FIM DO BLOCO -->
+
   <div class="card">
     <label>Código gerado:</label>
     <textarea id="codeOut" readonly></textarea>
@@ -70,6 +96,7 @@
   <canvas id="cvs" width="78" height="44"></canvas>
 
 <script type="text/javascript">(function(){
+  // --- CONSTANTES E ELEMENTOS DO DOM ---
   const ESC="\\e[";
   const imgInput=document.getElementById('imgInput');
   const resWInput=document.getElementById('resW');
@@ -79,8 +106,13 @@
   const codeOut=document.getElementById('codeOut');
   const preview=document.getElementById('ansiPreview');
   const cvs=document.getElementById('cvs');
-  const ctx=cvs.getContext('2d');
+  const ctx=cvs.getContext('2d', { willReadFrequently: true });
+  const colorPicker = document.getElementById('colorPicker');
+  const quickCodeOut = document.getElementById('quickCodeOut');
+  const copyQuickBtn = document.getElementById('copyQuickBtn');
+  let charSize = { width: 0, height: 0 }; // Armazenará o tamanho de um caractere no preview
 
+  // --- FUNÇÕES DE GERAÇÃO DE CÓDIGO ---
   const rgb=(d,i)=>[d[i],d[i+1],d[i+2]];
   const same=(a,b)=>a&&b&&(a[0]===b[0]&&a[1]===b[1]&&a[2]===b[2]);
 
@@ -89,60 +121,58 @@
     const mode=bg?"48":"38"; const pix=bg?"  ":"██";
     const data=ctx.getImageData(0,0,W,H).data;
     let last=-1; outer:for(let y=H-1;y>=0;--y){for(let x=0;x<W;++x){if(data[(y*W+x)*4+3]){last=y;break outer;}}}
-    if(last===-1) return `void ${func}() {\n}`;
+    if(last===-1) return `void ${func}() {\n\t// Imagem vazia\n}`;
     const out=[`void ${func}() {`]; let cur=null, blanks=0;
-    const flush=n=>{if(n>0)out.push(`    printf(\"${ESC}${n>1?n:''}E\");`);};
+    const flush=n=>{if(n>0)out.push(`    printf("${ESC}${n>1?n:''}E");`);};
     for(let y=0;y<=last;y++){
-      let col=0,drew=false; const buf=[`    printf(\"`];
+      let col=0,drew=false; const buf=[`    printf("`];
       for(let x=0;x<W;x++){
         const idx=(y*W+x)*4; if(!data[idx+3]) continue;
         const dest=x*2, mv=dest-col; if(mv){buf.push(`${ESC}${mv}C`);col=dest;}
         const c=rgb(data,idx); if(!same(c,cur)){buf.push(`${ESC}${mode};2;${c[0]};${c[1]};${c[2]}m`);cur=c;}
         buf.push(pix); col+=2; drew=true;
       }
-      if(drew){flush(blanks);blanks=0;buf.push(`${ESC}E\");`);out.push(buf.join(""));}else blanks++;
+      if(drew){flush(blanks);blanks=0;buf.push(`${ESC}E");`);out.push(buf.join(""));}else blanks++;
     }
-    flush(blanks); out.push(`    printf(\"${ESC}0m\");`,`    printf(\"${ESC}H\");`,`}`);
+    flush(blanks); out.push(`    printf("${ESC}0m");`,`    printf("${ESC}H");`,`}`);
     return out.join("\n");
   }
 
-  function gerarRelativo(bg,func){
-    // This function is currently disabled in the UI.
-    // Kept here for future development.
-    const W=cvs.width, H=cvs.height;
-    const mode=bg?"48":"38"; const pix=bg?"  ":"██";
-    const data=ctx.getImageData(0,0,W,H).data;
-    let minY=H,maxY=-1,minX=W,maxX=-1;
-    for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(data[(y*W+x)*4+3]){minY=Math.min(minY,y);maxY=Math.max(maxY,y);minX=Math.min(minX,x);maxX=Math.max(maxX,x);} 
-    if(maxY===-1) return `void ${func}() {\n}`;
-    const widthChars=(maxX-minX+1)*2; const out=[`void ${func}() {`]; let cur=null;
-    for(let y=minY;y<=maxY;y++){
-      let col=0; const buf=[`    printf(\"`];
-      for(let x=minX;x<=maxX;x++){
-        const idx=(y*W+x)*4; if(!data[idx+3]) { col+=2; continue; } // Advance column even for transparent pixels
-        const dest=(x-minX)*2, mv=dest-col; if(mv){buf.push(`${ESC}${Math.abs(mv)}${mv>0?'C':'D'}`);col=dest;}
-        const c=rgb(data,idx); if(!same(c,cur)){buf.push(`${ESC}${mode};2;${c[0]};${c[1]};${c[2]}m`);cur=c;}
-        buf.push(pix); col+=2;
-      }
-      if(y!==maxY) buf.push(`${ESC}1B${ESC}${widthChars}D`);
-      buf.push(`\");`); out.push(buf.join(""));
-    }
-    out.push(`    printf(\"${ESC}0m\");`,`}`);
-    return out.join("\n");
-  }
-
-  function gerarCodigo(bg,place,func){return place==='embutida'?gerarRelativo(bg,func):gerarFixo(bg,func);}  
+  function gerarCodigo(bg,place,func){
+      // A lógica para `embutida` (relativo) não está implementada.
+      // Futuramente, poderia ser adicionada aqui.
+      return gerarFixo(bg,func);
+  }   
 
   function gerarPreview(bg,bgColor){
     const W=cvs.width, H=cvs.height; const d=ctx.getImageData(0,0,W,H).data; let html="";
-    for(let y=0;y<H;y++){ for(let x=0;x<W;x++){ const i=(y*W+x)*4; if(!d[i+3]){html+="&nbsp;&nbsp;";continue;} const [r,g,b]=rgb(d,i); html+=bg?`<span style=\"background:rgb(${r},${g},${b});\">&nbsp;&nbsp;</span>`:`<span style=\"color:rgb(${r},${g},${b});\">██</span>`;} html+="<br/>"; }
-    preview.style.background=bgColor; preview.style.color=bg?'inherit':'#fff'; return html;
+    for(let y=0;y<H;y++){ 
+        for(let x=0;x<W;x++){ 
+            const i=(y*W+x)*4; 
+            if(!d[i+3]){
+                html+="&nbsp;&nbsp;";
+                continue;
+            } 
+            const [r,g,b]=rgb(d,i); 
+            html+=bg?`<span style=\"background:rgb(${r},${g},${b});\">&nbsp;&nbsp;</span>`:`<span style=\"color:rgb(${r},${g},${b});\">██</span>`;
+        } 
+        html+="<br/>"; 
+    }
+    preview.style.background=bgColor; 
+    preview.style.color=bg?'inherit':'#fff';
+    setTimeout(calculateCharSize, 0); // Calcula o tamanho do char após renderizar
+    return html;
   }
 
+  // --- FUNÇÕES DE MANIPULAÇÃO DE EVENTOS (HANDLERS) ---
   function handleGenerate(){
-    const file=imgInput.files[0]; if(!file){alert('Selecione uma imagem PNG antes');return;}
+    const file=imgInput.files[0]; 
+    if(!file){
+        showToast('Selecione uma imagem PNG antes');
+        return;
+    }
     const W=parseInt(resWInput.value)||78; const H=parseInt(resHInput.value)||44;
-    cvs.width=W; cvs.height=H; // ajusta canvas
+    cvs.width=W; cvs.height=H;
 
     const base=file.name.replace(/^(.*[\\/])?/, '').replace(/\.[^.]+$/, '');
     const func=`desenhar_${base}`.replace(/[^a-zA-Z0-9_]/g,'_');
@@ -151,42 +181,128 @@
       const img=new Image();
       img.onload=()=>{
         ctx.clearRect(0,0,W,H);
-        ctx.drawImage(img,0,0,W,H); // escala para a resolução desejada
+        ctx.drawImage(img,0,0,W,H);
         const useBg=document.querySelector('input[name="colorMode"]:checked').value==='bg';
         const place =document.querySelector('input[name="place"]:checked').value;
         const bgColor=document.querySelector('input[name="previewBg"]:checked').value;
         codeOut.value=gerarCodigo(useBg,place,func);
         preview.innerHTML=gerarPreview(useBg,bgColor);
-      }; img.src=e.target.result;
-    }; reader.readAsDataURL(file);
+      }; 
+      img.src=e.target.result;
+    }; 
+    reader.readAsDataURL(file);
   }
 
-  function handleCopy(){ 
-      if(!codeOut.value){
-          // Using a custom message box instead of alert
-          const messageBox = document.createElement('div');
-          messageBox.textContent = 'Nada para copiar ainda!';
-          messageBox.style.cssText = 'position:fixed; top:20px; left:50%; transform:translateX(-50%); background-color:#1e4fbb; color:white; padding:10px 20px; border-radius:8px; z-index:1000;';
-          document.body.appendChild(messageBox);
-          setTimeout(() => document.body.removeChild(messageBox), 2000);
-          return;
-      } 
-      const textAreaForCopy = document.createElement('textarea');
-      textAreaForCopy.value = codeOut.value;
-      document.body.appendChild(textAreaForCopy);
-      textAreaForCopy.select();
-      try {
-          document.execCommand('copy');
-          copyBtn.textContent='Copiado ✔'; 
-          setTimeout(()=>copyBtn.textContent='Copiar código',1500);
-      } catch (err) {
-          console.error('Fallback: Oops, unable to copy', err);
+  function handleCopy(text, btn){ 
+    if(!text){
+      showToast('Nada para copiar ainda!');
+      return;
+    } 
+    // Usando a API mais moderna Clipboard
+    navigator.clipboard.writeText(text).then(() => {
+        const originalText = btn.textContent;
+        btn.textContent='Copiado ✔'; 
+        setTimeout(()=>btn.textContent=originalText,1500);
+    }).catch(err => {
+        // Fallback para o método antigo se a API Clipboard falhar
+        const textAreaForCopy = document.createElement('textarea');
+        textAreaForCopy.value = text;
+        document.body.appendChild(textAreaForCopy);
+        textAreaForCopy.select();
+        try {
+            document.execCommand('copy');
+            const originalText = btn.textContent;
+            btn.textContent='Copiado ✔'; 
+            setTimeout(()=>btn.textContent=originalText,1500);
+        } catch (e) {
+            console.error('Falha ao copiar para a área de transferência', e);
+            showToast('Erro ao copiar!');
+        }
+        document.body.removeChild(textAreaForCopy);
+    });
+  }
+
+  // --- FUNÇÕES DAS FERRAMENTAS RÁPIDAS ---
+  function calculateCharSize() {
+      if (!preview.firstChild) return; 
+      // Não recalcular se já tiver um tamanho
+      if(charSize.width > 0 && charSize.height > 0) return;
+
+      const span = document.createElement('span');
+      span.textContent = '██'; // Usamos 2 caracteres como base da largura
+      preview.appendChild(span);
+      const rect = span.getBoundingClientRect();
+      if(rect.width > 0 && rect.height > 0){
+        charSize.width = rect.width / 2;
+        charSize.height = rect.height;
       }
-      document.body.removeChild(textAreaForCopy);
+      preview.removeChild(span);
+  }
+  
+  function hexToRgb(hex) {
+      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+      return result ? [parseInt(result[1], 16), parseInt(result[2], 16), parseInt(result[3], 16)] : null;
   }
 
+  function handlePreviewClick(e) {
+      if (charSize.width === 0 || charSize.height === 0) {
+          calculateCharSize(); // Tenta calcular de novo se falhou
+          if(charSize.width === 0 || charSize.height === 0){
+             showToast("Não foi possível calcular o tamanho da fonte. Tente gerar uma imagem primeiro.");
+             return;
+          }
+      }
+      const rect = preview.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      const row = Math.floor(y / charSize.height);
+      const col = Math.floor(x / charSize.width);
+
+      let code = `// Posiciona o cursor na linha ${row+1}, coluna ${col+1}\n`;
+      code += `printf("${ESC}H"); // Move o cursor para o canto superior esquerdo (1;1)\n`;
+      if (row > 0) {
+          code += `printf("${ESC}${row}E"); // Move para baixo ${row} linha(s)\n`;
+      }
+      if (col > 0) {
+          code += `printf("${ESC}${col}C"); // Move para a direita ${col} coluna(s)\n`;
+      }
+      quickCodeOut.value = code;
+  }
+
+  function handleColorChange() {
+      const color = colorPicker.value;
+      const rgb = hexToRgb(color);
+      if (!rgb) return;
+
+      const type = document.querySelector('input[name="colorType"]:checked').value;
+      const mode = type === 'fg' ? '38;2' : '48;2';
+      const comment = type === 'fg' ? 'texto' : 'fundo';
+
+      quickCodeOut.value = `// Define a cor de ${comment} para R:${rgb[0]} G:${rgb[1]} B:${rgb[2]}\nprintf("${ESC}${mode};${rgb[0]};${rgb[1]};${rgb[2]}m");`;
+  }
+  
+  function showToast(message) {
+      const toast = document.createElement('div');
+      toast.textContent = message;
+      toast.style.cssText = 'position:fixed; top:20px; left:50%; transform:translateX(-50%); background-color:var(--accent-hover); color:white; padding:10px 20px; border-radius:8px; z-index:1000; box-shadow: 0 4px 10px rgba(0,0,0,.4);';
+      document.body.appendChild(toast);
+      setTimeout(() => document.body.removeChild(toast), 2500);
+  }
+
+  // --- REGISTRO DOS EVENT LISTENERS ---
   genBtn.addEventListener('click',handleGenerate);
-  copyBtn.addEventListener('click',handleCopy);
-})();</script>
+  copyBtn.addEventListener('click', () => handleCopy(codeOut.value, copyBtn));
+  copyQuickBtn.addEventListener('click', () => handleCopy(quickCodeOut.value, copyQuickBtn));
+  preview.addEventListener('click', handlePreviewClick);
+  colorPicker.addEventListener('input', handleColorChange);
+  document.querySelectorAll('input[name="colorType"]').forEach(radio => {
+      radio.addEventListener('change', handleColorChange);
+  });
+
+  // --- INICIALIZAÇÃO ---
+  handleColorChange(); // Inicia o campo de cor com um valor padrão
+})();
+</script>
 </body>
 </html>
