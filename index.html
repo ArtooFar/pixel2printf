@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Pixel-Art ➜ printf()</title>
+  <title>Pixel-Artoo printf()</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root { --bg:#121212; --card:#1e1e1e; --accent:#2563eb; --accent-hover:#1e4fbb; --text:#e5e5e5; --border:#333; }
@@ -26,7 +26,7 @@
   </style>
 </head>
 <body>
-  <h1>Gerador Pixel-art ➜ <code>printf()</code> <span style="font-size:.75rem;opacity:.6;">v0.4.0</span></h1>
+  <h1>Gerador Pixel-art ➜ <code>printf()</code> <span style="font-size:.75rem;opacity:.6;">v0.4.1</span></h1>
 
   <div class="card">
     <label>Envie um PNG (com transparência):
@@ -71,7 +71,7 @@
     <p class="quick-tools-p">Clique no preview para pegar a posição ou a cor do pixel.<br>Use o seletor para gerar códigos de cor ANSI manualmente.</p>
     
     <div style="display:flex; flex-wrap: wrap; align-items: center; gap: 1rem; margin-top: 1rem;">
-      <!-- NOVO: Seletor de modo do clique -->
+      <!-- Seletor de modo do clique -->
        <fieldset>
         <legend>Modo do Clique no Preview</legend>
         <label><input type="radio" name="clickMode" value="position" checked> Pegar Posição</label>
@@ -228,15 +228,31 @@
   // --- FUNÇÕES DAS FERRAMENTAS RÁPIDAS ---
   function calculateCharSize() {
       if (!preview.firstChild || (charSize.width > 0 && charSize.height > 0)) return; 
+      
+      // --- CORREÇÃO DO BUG DE ALTURA ---
+      // Usar window.getComputedStyle para pegar o line-height real do elemento
+      // é muito mais preciso do que medir um <span> temporário.
+      // Isso corrige o desvio vertical que estava acontecendo.
+      const computedStyle = window.getComputedStyle(preview);
+      const lineHeight = parseFloat(computedStyle.lineHeight);
+      if (lineHeight > 0) {
+          charSize.height = lineHeight;
+      }
+      
+      // Para a largura, o método de medir o span ainda é o melhor para fontes monoespaçadas.
       const span = document.createElement('span');
       span.textContent = '██';
       preview.appendChild(span);
       const rect = span.getBoundingClientRect();
-      if(rect.width > 0 && rect.height > 0){
+      if(rect.width > 0){
         charSize.width = rect.width / 2;
-        charSize.height = rect.height;
       }
       preview.removeChild(span);
+
+      // Fallback: se o cálculo da altura falhar, usa o do span.
+      if (charSize.height === 0 && rect.height > 0) {
+        charSize.height = rect.height;
+      }
   }
   
   function hexToRgb(hex) {
@@ -266,26 +282,24 @@
       
       if (clickMode === 'color') {
           // MODO EYEDROPPER
-          // Converte a posição do clique no preview para a coordenada do canvas
           const canvasX = Math.floor(mouseX / (charSize.width * 2));
           const canvasY = Math.floor(mouseY / charSize.height);
 
-          // Pega a cor do pixel exato no canvas
           const pixelData = ctx.getImageData(canvasX, canvasY, 1, 1).data;
           const [r, g, b, a] = pixelData;
 
-          if (a === 0) { // Clicou em uma área transparente
+          if (a === 0) {
               showToast("Área transparente. Nenhuma cor selecionada.");
               return;
           }
           
           const hexColor = rgbToHex(r, g, b);
           colorPicker.value = hexColor;
-          handleColorChange(); // Atualiza o snippet de código com a nova cor
+          handleColorChange(); 
           showToast(`Cor selecionada: ${hexColor}`);
 
       } else {
-          // MODO POSIÇÃO (Lógica original)
+          // MODO POSIÇÃO
           const row = Math.floor(mouseY / charSize.height);
           const col = Math.floor(mouseX / charSize.width);
 
