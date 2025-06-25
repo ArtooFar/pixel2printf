@@ -14,7 +14,7 @@
     input[type="file"],input[type="number"],input[type="color"]{margin-top:.3rem}
     input[type="number"]{width:70px;padding:.2rem;border-radius:.4rem;border:1px solid var(--border);background:#111;color:var(--text)}
     input[type="color"]{min-width:50px;height:30px;padding:0.1rem;border-radius:.4rem;border:1px solid var(--border);background:transparent;cursor:pointer;}
-    .preview{cursor: crosshair;} /* Indica que o preview é clicável */
+    .preview{cursor: crosshair;} /* Cursor padrão: Posição */
     .quick-tools-p {font-size: 0.8rem; opacity: 0.7; margin-top: 0.5rem;}
     textarea{width:100%;min-height:280px;font-family:monospace;font-size:.9rem;padding:1rem;border-radius:.5rem;border:1px solid var(--border);background:#111;color:var(--text)}
     .btn{display:inline-block;margin-top:1rem;background:var(--accent);color:#fff;padding:.6rem 1.2rem;border-radius:.75rem;border:none;cursor:pointer;font-size:.9rem;transition:.15s}
@@ -26,7 +26,7 @@
   </style>
 </head>
 <body>
-  <h1>Gerador Pixel-art ➜ <code>printf()</code> <span style="font-size:.75rem;opacity:.6;">v0.3.0</span></h1>
+  <h1>Gerador Pixel-art ➜ <code>printf()</code> <span style="font-size:.75rem;opacity:.6;">v0.4.0</span></h1>
 
   <div class="card">
     <label>Envie um PNG (com transparência):
@@ -68,9 +68,15 @@
   <!-- BLOCO DE FERRAMENTAS RÁPIDAS -->
   <div class="card">
     <label>Ferramentas Rápidas (Posição e Cor)</label>
-    <p class="quick-tools-p">Clique no preview acima para pegar o código de posicionamento.<br>Use o seletor para gerar códigos de cor ANSI.</p>
+    <p class="quick-tools-p">Clique no preview para pegar a posição ou a cor do pixel.<br>Use o seletor para gerar códigos de cor ANSI manualmente.</p>
     
     <div style="display:flex; flex-wrap: wrap; align-items: center; gap: 1rem; margin-top: 1rem;">
+      <!-- NOVO: Seletor de modo do clique -->
+       <fieldset>
+        <legend>Modo do Clique no Preview</legend>
+        <label><input type="radio" name="clickMode" value="position" checked> Pegar Posição</label>
+        <label><input type="radio" name="clickMode" value="color"> Pegar Cor (Eyedropper)</label>
+      </fieldset>
       <fieldset>
         <legend>Seletor de Cor</legend>
         <input type="color" id="colorPicker" value="#2563eb">
@@ -110,6 +116,7 @@
   const colorPicker = document.getElementById('colorPicker');
   const quickCodeOut = document.getElementById('quickCodeOut');
   const copyQuickBtn = document.getElementById('copyQuickBtn');
+  const clickModeRadios = document.querySelectorAll('input[name="clickMode"]');
   let charSize = { width: 0, height: 0 }; // Armazenará o tamanho de um caractere no preview
 
   // --- FUNÇÕES DE GERAÇÃO DE CÓDIGO ---
@@ -139,8 +146,6 @@
   }
 
   function gerarCodigo(bg,place,func){
-      // A lógica para `embutida` (relativo) não está implementada.
-      // Futuramente, poderia ser adicionada aqui.
       return gerarFixo(bg,func);
   }   
 
@@ -160,7 +165,7 @@
     }
     preview.style.background=bgColor; 
     preview.style.color=bg?'inherit':'#fff';
-    setTimeout(calculateCharSize, 0); // Calcula o tamanho do char após renderizar
+    setTimeout(calculateCharSize, 0); 
     return html;
   }
 
@@ -198,13 +203,11 @@
       showToast('Nada para copiar ainda!');
       return;
     } 
-    // Usando a API mais moderna Clipboard
     navigator.clipboard.writeText(text).then(() => {
         const originalText = btn.textContent;
         btn.textContent='Copiado ✔'; 
         setTimeout(()=>btn.textContent=originalText,1500);
     }).catch(err => {
-        // Fallback para o método antigo se a API Clipboard falhar
         const textAreaForCopy = document.createElement('textarea');
         textAreaForCopy.value = text;
         document.body.appendChild(textAreaForCopy);
@@ -224,12 +227,9 @@
 
   // --- FUNÇÕES DAS FERRAMENTAS RÁPIDAS ---
   function calculateCharSize() {
-      if (!preview.firstChild) return; 
-      // Não recalcular se já tiver um tamanho
-      if(charSize.width > 0 && charSize.height > 0) return;
-
+      if (!preview.firstChild || (charSize.width > 0 && charSize.height > 0)) return; 
       const span = document.createElement('span');
-      span.textContent = '██'; // Usamos 2 caracteres como base da largura
+      span.textContent = '██';
       preview.appendChild(span);
       const rect = span.getBoundingClientRect();
       if(rect.width > 0 && rect.height > 0){
@@ -243,31 +243,62 @@
       const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
       return result ? [parseInt(result[1], 16), parseInt(result[2], 16), parseInt(result[3], 16)] : null;
   }
+  
+  function rgbToHex(r, g, b) {
+    const toHex = c => ('0' + c.toString(16)).slice(-2);
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+  }
 
   function handlePreviewClick(e) {
+      const clickMode = document.querySelector('input[name="clickMode"]:checked').value;
+
       if (charSize.width === 0 || charSize.height === 0) {
-          calculateCharSize(); // Tenta calcular de novo se falhou
+          calculateCharSize(); 
           if(charSize.width === 0 || charSize.height === 0){
-             showToast("Não foi possível calcular o tamanho da fonte. Tente gerar uma imagem primeiro.");
+             showToast("Gere uma imagem para poder usar esta função.");
              return;
           }
       }
+
       const rect = preview.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      
+      if (clickMode === 'color') {
+          // MODO EYEDROPPER
+          // Converte a posição do clique no preview para a coordenada do canvas
+          const canvasX = Math.floor(mouseX / (charSize.width * 2));
+          const canvasY = Math.floor(mouseY / charSize.height);
 
-      const row = Math.floor(y / charSize.height);
-      const col = Math.floor(x / charSize.width);
+          // Pega a cor do pixel exato no canvas
+          const pixelData = ctx.getImageData(canvasX, canvasY, 1, 1).data;
+          const [r, g, b, a] = pixelData;
 
-      let code = `// Posiciona o cursor na linha ${row+1}, coluna ${col+1}\n`;
-      code += `printf("${ESC}H"); // Move o cursor para o canto superior esquerdo (1;1)\n`;
-      if (row > 0) {
-          code += `printf("${ESC}${row}E"); // Move para baixo ${row} linha(s)\n`;
+          if (a === 0) { // Clicou em uma área transparente
+              showToast("Área transparente. Nenhuma cor selecionada.");
+              return;
+          }
+          
+          const hexColor = rgbToHex(r, g, b);
+          colorPicker.value = hexColor;
+          handleColorChange(); // Atualiza o snippet de código com a nova cor
+          showToast(`Cor selecionada: ${hexColor}`);
+
+      } else {
+          // MODO POSIÇÃO (Lógica original)
+          const row = Math.floor(mouseY / charSize.height);
+          const col = Math.floor(mouseX / charSize.width);
+
+          let code = `// Posiciona o cursor na linha ${row+1}, coluna ${col+1}\n`;
+          code += `printf("${ESC}H"); // Move o cursor para o canto superior esquerdo (1;1)\n`;
+          if (row > 0) {
+              code += `printf("${ESC}${row}E"); // Move para baixo ${row} linha(s)\n`;
+          }
+          if (col > 0) {
+              code += `printf("${ESC}${col}C"); // Move para a direita ${col} coluna(s)\n`;
+          }
+          quickCodeOut.value = code;
       }
-      if (col > 0) {
-          code += `printf("${ESC}${col}C"); // Move para a direita ${col} coluna(s)\n`;
-      }
-      quickCodeOut.value = code;
   }
 
   function handleColorChange() {
@@ -289,6 +320,10 @@
       document.body.appendChild(toast);
       setTimeout(() => document.body.removeChild(toast), 2500);
   }
+  
+  function handleModeChange(e){
+      preview.style.cursor = e.target.value === 'color' ? 'copy' : 'crosshair';
+  }
 
   // --- REGISTRO DOS EVENT LISTENERS ---
   genBtn.addEventListener('click',handleGenerate);
@@ -299,6 +334,8 @@
   document.querySelectorAll('input[name="colorType"]').forEach(radio => {
       radio.addEventListener('change', handleColorChange);
   });
+  clickModeRadios.forEach(radio => radio.addEventListener('change', handleModeChange));
+
 
   // --- INICIALIZAÇÃO ---
   handleColorChange(); // Inicia o campo de cor com um valor padrão
