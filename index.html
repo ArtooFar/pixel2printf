@@ -26,7 +26,7 @@
   </style>
 </head>
 <body>
-  <h1>Pixel-Artoo ➜ <code>printf()</code> <span style="font-size:.75rem;opacity:.6;">v0.4.1</span></h1>
+  <h1>Pixel-Artoo ➜ <code>printf()</code> <span style="font-size:.75rem;opacity:.6;">v0.4.3</span></h1>
 
   <div class="card">
     <label>Envie um PNG (com transparência):
@@ -65,14 +65,12 @@
     <pre id="ansiPreview" class="preview"></pre>
   </div>
 
-  <!-- BLOCO DE FERRAMENTAS RÁPIDAS -->
   <div class="card">
     <label>Ferramentas Rápidas (Posição e Cor)</label>
     <p class="quick-tools-p">Clique no preview para pegar a posição ou a cor do pixel.<br>Use o seletor para gerar códigos de cor ANSI manualmente.</p>
     
     <div style="display:flex; flex-wrap: wrap; align-items: center; gap: 1rem; margin-top: 1rem;">
-      <!-- Seletor de modo do clique -->
-       <fieldset>
+      <fieldset>
         <legend>Modo do Clique no Preview</legend>
         <label><input type="radio" name="clickMode" value="position" checked> Pegar Posição</label>
         <label><input type="radio" name="clickMode" value="color"> Pegar Cor (Eyedropper)</label>
@@ -92,8 +90,6 @@
     <textarea id="quickCodeOut" readonly style="min-height: 110px;"></textarea>
     <button id="copyQuickBtn" class="btn" type="button">Copiar Snippet</button>
   </div>
-  <!-- FIM DO BLOCO -->
-
   <div class="card">
     <label>Código gerado:</label>
     <textarea id="codeOut" readonly></textarea>
@@ -129,7 +125,10 @@
     const data=ctx.getImageData(0,0,W,H).data;
     let last=-1; outer:for(let y=H-1;y>=0;--y){for(let x=0;x<W;++x){if(data[(y*W+x)*4+3]){last=y;break outer;}}}
     if(last===-1) return `void ${func}() {\n\t// Imagem vazia\n}`;
-    const out=[`void ${func}() {`]; let cur=null, blanks=0;
+    
+    const out=[`void ${func}() {`]; 
+    
+    let cur=null, blanks=0;
     const flush=n=>{if(n>0)out.push(`    printf("${ESC}${n>1?n:''}E");`);};
     for(let y=0;y<=last;y++){
       let col=0,drew=false; const buf=[`    printf("`];
@@ -141,7 +140,14 @@
       }
       if(drew){flush(blanks);blanks=0;buf.push(`${ESC}E");`);out.push(buf.join(""));}else blanks++;
     }
-    flush(blanks); out.push(`    printf("${ESC}0m");`,`    printf("${ESC}H");`,`}`);
+    flush(blanks); 
+    out.push(`    printf("${ESC}0m");`,`    printf("${ESC}H");`);
+    
+    // MODIFICAÇÃO: Adicionando a marca d'água aqui, no final.
+    const watermark = "    /*\n    >> Feito utilizando Artoo printf()\n    >> https://artoofar.github.io/pixel2printf/\n    */";
+    out.push(watermark);
+    
+    out.push(`}`);
     return out.join("\n");
   }
 
@@ -229,17 +235,12 @@
   function calculateCharSize() {
       if (!preview.firstChild || (charSize.width > 0 && charSize.height > 0)) return; 
       
-      // --- CORREÇÃO DO BUG DE ALTURA ---
-      // Usar window.getComputedStyle para pegar o line-height real do elemento
-      // é muito mais preciso do que medir um <span> temporário.
-      // Isso corrige o desvio vertical que estava acontecendo.
       const computedStyle = window.getComputedStyle(preview);
       const lineHeight = parseFloat(computedStyle.lineHeight);
       if (lineHeight > 0) {
           charSize.height = lineHeight;
       }
       
-      // Para a largura, o método de medir o span ainda é o melhor para fontes monoespaçadas.
       const span = document.createElement('span');
       span.textContent = '██';
       preview.appendChild(span);
@@ -249,7 +250,6 @@
       }
       preview.removeChild(span);
 
-      // Fallback: se o cálculo da altura falhar, usa o do span.
       if (charSize.height === 0 && rect.height > 0) {
         charSize.height = rect.height;
       }
